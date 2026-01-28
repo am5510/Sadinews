@@ -24,11 +24,15 @@ export async function POST(request: Request) {
                 album: body.album || [],
                 time: body.time || 'เมื่อสักครู่',
                 content: body.content,
+                video: body.video,
+                videoType: body.videoType,
+                videoEmbed: body.videoEmbed,
             },
         });
         return NextResponse.json(news, { status: 201 });
     } catch (error) {
         console.error('Error creating news:', error);
-        return NextResponse.json({ error: 'Failed to create news' }, { status: 500 });
+        const errorMessage = (error as any)?.message || String(error) || 'Failed to create news';
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }

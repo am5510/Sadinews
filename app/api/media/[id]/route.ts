@@ -31,11 +31,13 @@ export async function PUT(
                 url: body.url,
                 embedCode: body.embedCode,
                 description: body.description,
+                coverImage: body.coverImage,
             },
         });
         return NextResponse.json(media);
     } catch (error) {
-        return NextResponse.json({ error: 'Failed to update media' }, { status: 500 });
+        console.error('Error updating media:', error);
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to update media' }, { status: 500 });
     }
 }
 

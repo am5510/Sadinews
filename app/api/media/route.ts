@@ -24,11 +24,13 @@ export async function POST(request: Request) {
                 url: body.url,
                 embedCode: body.embedCode,
                 description: body.description,
+                coverImage: body.coverImage,
             },
         });
         return NextResponse.json(media, { status: 201 });
     } catch (error) {
         console.error('Error creating media:', error);
-        return NextResponse.json({ error: 'Failed to create media' }, { status: 500 });
+        const errorMessage = (error as any)?.message || String(error) || 'Failed to create media';
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }

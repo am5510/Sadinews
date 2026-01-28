@@ -59,9 +59,27 @@ export default function MediaGallery({ initialMedia }: MediaGalleryProps) {
                             </div>
 
                             {/* Image optimization */}
-                            {/* @ts-ignore */}
                             <Image
-                                src={item.url || '/placeholder.jpg'}
+                                src={(() => {
+                                    // 1. Use Cover Image if available
+                                    // @ts-ignore
+                                    if (item.coverImage) return item.coverImage;
+
+                                    // 2. If it's a video, try to get a thumbnail
+                                    if (item.category === 'video' || item.type === 'video' || item.sourceType === 'video') {
+                                        // YouTube Thumbnail
+                                        // @ts-ignore
+                                        const ytMatch = item.url?.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/))([^&?]+)/);
+                                        if (ytMatch && ytMatch[1]) {
+                                            return `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+                                        }
+                                        return '/placeholder-video.jpg';
+                                    }
+
+                                    // 3. Fallback
+                                    // @ts-ignore
+                                    return item.url || '/placeholder.jpg';
+                                })()}
                                 alt={item.title}
                                 fill
                                 className="object-cover group-hover:scale-110 transition duration-700"

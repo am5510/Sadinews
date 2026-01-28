@@ -10,6 +10,9 @@ export interface NewsItem {
     date?: string;
     tagColor?: string;
     createdAt?: string;
+    video?: string;
+    videoType?: string;
+    videoEmbed?: string;
 }
 
 export interface TrainingItem {
@@ -39,4 +42,5 @@ export interface MediaItem {
     description?: string;
     type?: string;
     views?: number;
+    coverImage?: string;
 }

@@ -201,7 +201,29 @@ export default async function Home() {
                   <div className="aspect-video rounded-lg overflow-hidden bg-gray-100 mb-2 relative shadow-md">
                     {/* @ts-ignore */}
                     <Image
-                      src={item.url || '/placeholder.jpg'}
+                      src={(() => {
+                        // 1. Use Cover Image if available
+                        // @ts-ignore
+                        if (item.coverImage) return item.coverImage;
+
+                        // 2. If it's a video, try to get a thumbnail
+                        // @ts-ignore
+                        if (item.category === 'video' || item.sourceType === 'video') {
+                          // YouTube Thumbnail
+                          // @ts-ignore
+                          const ytMatch = item.url?.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/))([^&?]+)/);
+                          if (ytMatch && ytMatch[1]) {
+                            return `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+                          }
+                          // Fallback to placeholder for other videos
+                          return '/placeholder-video.jpg';
+                        }
+
+                        // 3. Fallback to original URL (for images) or generic placeholder
+                        // @ts-ignore
+                        return item.url || '/placeholder.jpg';
+                      })()}
+                      // @ts-ignore
                       alt={item.title}
                       fill
                       className="object-cover opacity-90 group-hover:opacity-100 group-hover:scale-110 transition duration-500"

@@ -31,25 +31,38 @@ export default function DashboardPage() {
     // Upload State
     const [uploadPreview, setUploadPreview] = useState<string | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
+    const [selectedMediaCoverFile, setSelectedMediaCoverFile] = useState<File | null>(null); // New state for media cover
     const [albumFiles, setAlbumFiles] = useState<File[]>([]);
     const [albumPreviews, setAlbumPreviews] = useState<string[]>([]);
 
     // Forms State
-    const [newsForm, setNewsForm] = useState({ title: '', category: 'ทั่วไป', image: '', album: [] as string[], time: 'เมื่อสักครู่', content: '' });
+    const [newsForm, setNewsForm] = useState({
+        title: '',
+        category: 'ทั่วไป',
+        image: '',
+        album: [] as string[],
+        time: 'เมื่อสักครู่',
+        content: '',
+        video: '',
+        videoType: 'upload', // upload, link, embed
+        videoEmbed: ''
+    });
 
-    // Insert Image State
+    // Insert Image/Video State
     const [isInsertingImage, setIsInsertingImage] = useState(false);
+    const [isInsertingVideo, setIsInsertingVideo] = useState(false);
     const [trainingForm, setTrainingForm] = useState({ title: '', rawDate: '', time: '', location: '', seats: '', price: '', speaker: '', speakerImage: '', type: 'Onsite', description: '' });
-    const [mediaForm, setMediaForm] = useState({ title: '', category: 'image', sourceType: 'upload', url: '', embedCode: '', description: '' });
+    const [mediaForm, setMediaForm] = useState({ title: '', category: 'image', sourceType: 'upload', url: '', embedCode: '', description: '', coverImage: '' });
 
     // Fetch Data
     const fetchData = useCallback(async () => {
         try {
             setIsLoading(true);
             const [newsRes, trainingsRes, mediaRes] = await Promise.all([
-                fetch('/api/news'),
-                fetch('/api/trainings'),
-                fetch('/api/media'),
+                fetch('/api/news', { cache: 'no-store' }),
+                fetch('/api/trainings', { cache: 'no-store' }),
+                fetch('/api/media', { cache: 'no-store' }),
             ]);
 
             if (newsRes.ok) setNewsList(await newsRes.json());
@@ -195,9 +208,13 @@ export default function DashboardPage() {
     const handleDelete = async (collectionName: string, id: string) => {
         if (window.confirm('ยืนยันการลบข้อมูล?')) {
             try {
-                await fetch(`/api/${collectionName}/${id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/${collectionName}/${id}`, { method: 'DELETE' });
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || 'Failed to delete');
+                }
                 fetchData();
-            } catch (error) { console.error(error); alert("Error deleting"); }
+            } catch (error: any) { console.error(error); alert("Error deleting: " + error.message); }
         }
     };
 
@@ -217,6 +234,11 @@ export default function DashboardPage() {
                 albumUrls = [...albumUrls, ...newAlbumUrls];
             }
 
+            let videoUrl = newsForm.video;
+            if (newsForm.videoType === 'upload' && selectedVideoFile) {
+                videoUrl = await uploadFile(selectedVideoFile);
+            }
+
             const newsData = {
                 title: newsForm.title,
                 category: newsForm.category || 'ทั่วไป',
@@ -224,27 +246,50 @@ export default function DashboardPage() {
                 album: albumUrls,
                 time: newsForm.time,
                 content: newsForm.content,
+                video: videoUrl,
+                videoType: newsForm.videoType,
+                videoEmbed: newsForm.videoEmbed,
             };
 
+            let res;
             if (editingNewsId) {
-                await fetch(`/api/news/${editingNewsId}`, {
+                res = await fetch(`/api/news/${editingNewsId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newsData),
                 });
             } else {
-                await fetch('/api/news', {
+                res = await fetch('/api/news', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newsData),
                 });
             }
 
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Failed to save news');
+            }
+
             setShowNewsModal(false);
-            setNewsForm({ title: '', category: 'ทั่วไป', image: '', album: [], time: 'เมื่อสักครู่', content: '' });
-            setSelectedFile(null); setUploadPreview(null); setAlbumFiles([]); setAlbumPreviews([]); setEditingNewsId(null); setIsUploading(false);
+            setNewsForm({
+                title: '',
+                category: 'ทั่วไป',
+                image: '',
+                album: [],
+                time: 'เมื่อสักครู่',
+                content: '',
+                video: '',
+                videoType: 'upload',
+                videoEmbed: ''
+            });
+            setSelectedFile(null); setSelectedVideoFile(null); setUploadPreview(null); setAlbumFiles([]); setAlbumPreviews([]); setEditingNewsId(null); setIsUploading(false);
             fetchData();
-        } catch (error) { console.error(error); setIsUploading(false); alert("Error saving news"); }
+        } catch (error: any) {
+            console.error('Save News Error:', error);
+            setIsUploading(false);
+            alert("บันทึกข่าวล้มเหลว: " + (error.message || 'Unknown error'));
+        }
     };
 
     const handleInsertImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -319,6 +364,31 @@ export default function DashboardPage() {
         }
     };
 
+    const handleInsertVideo = async (e: React.ChangeEvent<HTMLInputElement>, targetForm: 'news' | 'training' | 'media') => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setIsInsertingVideo(true);
+            const url = await uploadFile(file);
+            const videoTag = `<video src="${url}" controls class="w-full rounded-lg shadow-md my-4"></video>\n`;
+
+            if (targetForm === 'news') {
+                setNewsForm(prev => ({ ...prev, content: prev.content + videoTag }));
+            } else if (targetForm === 'training') {
+                setTrainingForm(prev => ({ ...prev, description: (prev.description || '') + videoTag }));
+            } else if (targetForm === 'media') {
+                setMediaForm(prev => ({ ...prev, description: (prev.description || '') + videoTag }));
+            }
+        } catch (error) {
+            console.error('Failed to insert video:', error);
+            alert('Failed to upload video');
+        } finally {
+            setIsInsertingVideo(false);
+            e.target.value = '';
+        }
+    };
+
     const handleAddTraining = async (e: React.FormEvent) => {
         e.preventDefault();
         const d = trainingForm.rawDate ? new Date(trainingForm.rawDate) : new Date();
@@ -342,17 +412,19 @@ export default function DashboardPage() {
             };
 
             if (editingTrainingId) {
-                await fetch(`/api/trainings/${editingTrainingId}`, {
+                const res = await fetch(`/api/trainings/${editingTrainingId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(trainingData),
                 });
+                if (!res.ok) throw new Error('Failed to update training');
             } else {
-                await fetch('/api/trainings', {
+                const res = await fetch('/api/trainings', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(trainingData),
                 });
+                if (!res.ok) throw new Error('Failed to create training');
             }
 
             setShowTrainingModal(false);
@@ -360,7 +432,11 @@ export default function DashboardPage() {
             setEditingTrainingId(null);
             setIsUploading(false);
             fetchData();
-        } catch (error) { console.error(error); setIsUploading(false); alert("Error saving training"); }
+        } catch (error: any) {
+            console.error('Save Training Error:', error);
+            setIsUploading(false);
+            alert("บันทึกข้อมูลอบรมล้มเหลว: " + (error.message || 'Unknown error'));
+        }
     };
 
     const handleAddMedia = async (e: React.FormEvent) => {
@@ -373,6 +449,11 @@ export default function DashboardPage() {
                 mediaUrl = await uploadFile(selectedFile);
             }
 
+            let coverImageUrl = mediaForm.coverImage;
+            if (selectedMediaCoverFile) {
+                coverImageUrl = await uploadFile(selectedMediaCoverFile);
+            }
+
             const mediaData = {
                 title: mediaForm.title,
                 category: mediaForm.category,
@@ -380,30 +461,38 @@ export default function DashboardPage() {
                 url: mediaUrl,
                 embedCode: mediaForm.embedCode,
                 description: mediaForm.description,
+                coverImage: coverImageUrl,
             };
 
             if (editingMediaId) {
-                await fetch(`/api/media/${editingMediaId}`, {
+                const res = await fetch(`/api/media/${editingMediaId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(mediaData),
                 });
+                if (!res.ok) throw new Error('Failed to update media');
             } else {
-                await fetch('/api/media', {
+                const res = await fetch('/api/media', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(mediaData),
                 });
+                if (!res.ok) throw new Error('Failed to create media');
             }
 
             setShowMediaModal(false);
-            setMediaForm({ title: '', category: 'image', sourceType: 'upload', url: '', embedCode: '', description: '' });
+            setMediaForm({ title: '', category: 'image', sourceType: 'upload', url: '', embedCode: '', description: '', coverImage: '' });
             setSelectedFile(null);
+            setSelectedMediaCoverFile(null);
             setUploadPreview(null);
             setEditingMediaId(null);
             setIsUploading(false);
             fetchData();
-        } catch (error) { console.error(error); setIsUploading(false); alert("Error saving media"); }
+        } catch (error: any) {
+            console.error('Save Media Error:', error);
+            setIsUploading(false);
+            alert("บันทึกสื่อล้มเหลว: " + (error.message || 'Unknown error'));
+        }
     };
 
     // Open Edit Modals
@@ -415,8 +504,17 @@ export default function DashboardPage() {
             image: news.image,
             album: news.album || [],
             time: news.time,
-            content: news.content || ''
+            content: news.content || '',
+            video: news.video || '',
+            videoType: news.videoType || 'upload',
+            videoEmbed: news.videoEmbed || ''
         });
+        setUploadPreview(news.image);
+        // If it's a video upload and exists, we might want to show something, but reuse uploadPreview for main image for now
+        // If we want to support previewing the ATTACHED video in edit mode:
+        if (news.video && news.videoType === 'upload') {
+            // We don't have a separate state for video preview yet, but logic can handle checking form.video
+        }
         setUploadPreview(news.image);
         setAlbumPreviews(news.album || []);
         setShowNewsModal(true);
@@ -448,11 +546,15 @@ export default function DashboardPage() {
             sourceType: m.sourceType,
             url: m.url || '',
             embedCode: m.embedCode || '',
-            description: m.description || '' // Add type MediaItem description potentially undefined
+            description: m.description || '',
+            coverImage: m.coverImage || ''
         });
         if (m.sourceType === 'upload' && m.url) {
             setUploadPreview(m.url);
         }
+        // If it has a cover image, we might want to preview it, but for now we focus on the main media preview
+        // Or we could set a separate preview state for cover if needed. 
+        // For simplicity, let's just rely on the input showing the value or file name.
         setShowMediaModal(true);
     };
 
@@ -503,7 +605,7 @@ export default function DashboardPage() {
                         <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                             <h3 className="font-bold text-gray-800 flex items-center gap-2"><ListFilter size={18} /> จัดการข่าว</h3>
                             <button
-                                onClick={() => { setEditingNewsId(null); setNewsForm({ title: '', category: 'ทั่วไป', image: '', album: [], time: 'เมื่อสักครู่', content: '' }); setUploadPreview(null); setAlbumPreviews([]); setShowNewsModal(true); }}
+                                onClick={() => { setEditingNewsId(null); setNewsForm({ title: '', category: 'ทั่วไป', image: '', album: [], time: 'เมื่อสักครู่', content: '', video: '', videoType: 'upload', videoEmbed: '' }); setUploadPreview(null); setSelectedVideoFile(null); setAlbumPreviews([]); setShowNewsModal(true); }}
                                 className="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 flex items-center gap-1">
                                 <Plus size={12} /> เพิ่มข่าว
                             </button>
@@ -561,7 +663,7 @@ export default function DashboardPage() {
                     <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                         <h3 className="font-bold text-gray-800 flex items-center gap-2"><Film size={18} /> จัดการสื่อมัลติมีเดีย</h3>
                         <button
-                            onClick={() => { setEditingMediaId(null); setMediaForm({ title: '', category: 'image', sourceType: 'upload', url: '', embedCode: '', description: '' }); setUploadPreview(null); setShowMediaModal(true); }}
+                            onClick={() => { setEditingMediaId(null); setMediaForm({ title: '', category: 'image', sourceType: 'upload', url: '', embedCode: '', description: '', coverImage: '' }); setUploadPreview(null); setSelectedMediaCoverFile(null); setShowMediaModal(true); }}
                             className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 flex items-center gap-1">
                             <Plus size={12} /> เพิ่มสื่อ
                         </button>
@@ -605,102 +707,198 @@ export default function DashboardPage() {
                             <div><label className="block text-sm font-medium text-gray-700 mb-1">หัวข้อข่าว</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={newsForm.title} onChange={(e) => setNewsForm({ ...newsForm, title: e.target.value })} /></div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">รายละเอียดข่าว</label>
-                                <div className="mb-2">
+                                <div className="mb-2 flex gap-2">
                                     <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
                                         <Images size={14} />
-                                        {isInsertingImage ? 'กำลังอัปโหลด...' : 'แทรกรูปภาพในเนื้อหา'}
+                                        {isInsertingImage ? 'กำลังอัปโหลด...' : 'แทรกรูปภาพ'}
                                         <input type="file" accept="image/*" className="hidden" onChange={handleInsertImage} disabled={isInsertingImage} />
+                                    </label>
+                                    <label className="cursor-pointer bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
+                                        <Video size={14} />
+                                        {isInsertingVideo ? 'กำลังอัปโหลด...' : 'แทรกวิดีโอ'}
+                                        <input type="file" accept="video/*" className="hidden" onChange={(e) => handleInsertVideo(e, 'news')} disabled={isInsertingVideo} />
                                     </label>
                                 </div>
                                 <textarea className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none h-32 resize-none focus:ring-2 focus:ring-red-100 transition" placeholder="ใส่เนื้อหาข่าวที่นี่..." value={newsForm.content} onChange={(e) => setNewsForm({ ...newsForm, content: e.target.value })} ></textarea>
                             </div>
+
+
+                            {/* Attached Video Section */}
+                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                    <Video size={16} className="text-red-600" /> วิดีโอแนบท้าย (Attached Video)
+                                </label>
+
+                                <div className="flex gap-2 mb-3">
+                                    <button type="button" onClick={() => setNewsForm({ ...newsForm, videoType: 'upload' })} className={`px-3 py-1 rounded text-xs border ${newsForm.videoType === 'upload' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>อัปโหลดไฟล์ (Upload)</button>
+                                    <button type="button" onClick={() => setNewsForm({ ...newsForm, videoType: 'link' })} className={`px-3 py-1 rounded text-xs border ${newsForm.videoType === 'link' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>ลิงก์ภายนอก (Link)</button>
+                                    <button type="button" onClick={() => setNewsForm({ ...newsForm, videoType: 'embed' })} className={`px-3 py-1 rounded text-xs border ${newsForm.videoType === 'embed' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>Embed Code</button>
+                                </div>
+
+                                {newsForm.videoType === 'upload' && (
+                                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 bg-white hover:bg-gray-50 transition cursor-pointer relative">
+                                        {(newsForm.video || selectedVideoFile) ? (
+                                            <div className="flex items-center gap-2 text-green-600 font-medium">
+                                                <CheckCircle size={20} /> มีวิดีโอแล้วพร้อมอัปโหลด
+                                            </div>
+                                        ) : (
+                                            <><UploadCloud size={24} className="text-gray-400" /><span className="text-xs text-gray-500">เลือกไฟล์วิดีโอ</span></>
+                                        )}
+                                        <input type="file" accept="video/*" onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                setSelectedVideoFile(file);
+                                            }
+                                        }} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                    </div>
+                                )}
+
+                                {newsForm.videoType === 'link' && (
+                                    <div className="relative"><LinkIcon className="absolute left-3 top-2.5 text-gray-400" size={16} /><input type="url" className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg outline-none text-sm" placeholder="https://example.com/video.mp4" value={newsForm.video} onChange={(e) => setNewsForm({ ...newsForm, video: e.target.value })} /></div>
+                                )}
+
+                                {newsForm.videoType === 'embed' && (
+                                    <div className="relative"><Code className="absolute left-3 top-2.5 text-gray-400" size={16} /><textarea className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg outline-none h-20 resize-none font-mono text-xs" placeholder='<iframe src="..." ...></iframe>' value={newsForm.videoEmbed} onChange={(e) => setNewsForm({ ...newsForm, videoEmbed: e.target.value })}></textarea></div>
+                                )}
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">เวลา</label><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={newsForm.time} onChange={(e) => setNewsForm({ ...newsForm, time: e.target.value })} /></div></div>
                             <div><label className="block text-sm font-medium text-gray-700 mb-1">รูปภาพหลัก (Cover)</label><div className="border-2 border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 transition cursor-pointer relative">{uploadPreview ? (<><img src={uploadPreview} className="h-32 object-cover rounded-lg shadow-sm" alt="Preview" /><button type="button" onClick={() => { setUploadPreview(null); setSelectedFile(null); }} className="absolute top-2 right-2 bg-red-600 text-white p-1 rounded-full hover:bg-red-700"><X size={14} /></button></>) : (<><UploadCloud size={32} className="text-gray-400" /><span className="text-sm text-gray-500">เลือกรูปภาพหลัก</span><input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer" /></>)}</div><div className="mt-2 text-center text-xs text-gray-400">- หรือใส่ URL -</div><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none text-sm mt-1" placeholder="https://example.com/image.jpg" value={newsForm.image} onChange={(e) => setNewsForm({ ...newsForm, image: e.target.value })} /></div>
                             <div><label className="block text-sm font-medium text-gray-700 mb-1">อัลบั้มรูปภาพ (เพิ่มเติม)</label><div className="border-2 border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 transition cursor-pointer relative"><Images size={32} className="text-gray-400" /><span className="text-sm text-gray-500">คลิกเพื่อเลือกหลายรูป</span><input type="file" accept="image/*" multiple onChange={handleAlbumChange} className="absolute inset-0 opacity-0 cursor-pointer" /></div>{albumPreviews.length > 0 && (<div className="grid grid-cols-4 gap-2 mt-3">{albumPreviews.map((url, index) => (<div key={index} className="relative aspect-square rounded-lg overflow-hidden group border border-gray-200"><img src={url} className="w-full h-full object-cover" alt={`Album ${index}`} /><button type="button" onClick={() => removeAlbumImage(index)} className="absolute top-1 right-1 bg-red-600 text-white p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition hover:bg-red-700"><X size={12} /></button></div>))}</div>)}</div>
                             <div className="pt-4 flex justify-end gap-3 border-t"><button type="button" onClick={() => setShowNewsModal(false)} className="px-5 py-2 rounded-lg text-gray-600 hover:bg-gray-100 font-medium">ยกเลิก</button><button type="submit" disabled={isUploading} className={`px-6 py-2 rounded-lg text-white font-bold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${editingNewsId ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'}`}>{isUploading ? <><Loader2 size={18} className="animate-spin" /> กำลังอัปโหลด...</> : (editingNewsId ? 'บันทึกการแก้ไข' : 'บันทึกข่าวลงระบบ')}</button></div>
                         </form>
                     </div>
-                </div>
-            )}
+                </div >
+            )
+            }
 
-            {showTrainingModal && (<div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"><div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-fade-in-up"><div className="bg-blue-600 text-white px-6 py-4 flex justify-between items-center"><h3 className="text-lg font-bold flex items-center gap-2"><Calendar size={20} className="text-blue-200" /> {editingTrainingId ? 'แก้ไขหลักสูตรอบรม' : 'เพิ่มหลักสูตรอบรม'}</h3><button onClick={() => setShowTrainingModal(false)} className="text-blue-200 hover:text-white"><X size={24} /></button></div><form onSubmit={handleAddTraining} className="p-6 space-y-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">ชื่อหลักสูตร</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.title} onChange={(e) => setTrainingForm({ ...trainingForm, title: e.target.value })} /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">วันที่ (MM/DD/YYYY)</label><input type="date" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.rawDate} onChange={(e) => setTrainingForm({ ...trainingForm, rawDate: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">เวลา (เช่น 09:00-16:00)</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.time} onChange={(e) => setTrainingForm({ ...trainingForm, time: e.target.value })} /></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">สถานที่</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.location} onChange={(e) => setTrainingForm({ ...trainingForm, location: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">ประเภท</label><select className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none bg-white" value={trainingForm.type} onChange={(e) => setTrainingForm({ ...trainingForm, type: e.target.value })}><option>Onsite</option><option>Online</option><option>Hybrid</option></select></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">จำนวนรับ (ท่าน)</label><input type="number" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.seats} onChange={(e) => setTrainingForm({ ...trainingForm, seats: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">ราคา</label><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.price} onChange={(e) => setTrainingForm({ ...trainingForm, price: e.target.value })} /></div></div>
-                <div className="grid grid-cols-2 gap-4 items-end">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">วิทยากร</label><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.speaker} onChange={(e) => setTrainingForm({ ...trainingForm, speaker: e.target.value })} /></div>
-                    <div className="relative"><input type="file" id="speaker-upload" className="hidden" accept="image/*" onChange={handleSpeakerFileChange} /><label htmlFor="speaker-upload" className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-lg px-4 py-2 cursor-pointer hover:bg-gray-50 text-sm text-gray-600"><UploadCloud size={18} />{trainingForm.speakerImage ? 'เปลี่ยนรูป' : 'รูปวิทยากร'}</label></div>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">รายละเอียดโครงการ</label>
-                    <div className="mb-2">
-                        <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
-                            <Images size={14} />
-                            {isInsertingImage ? 'กำลังอัปโหลด...' : 'แทรกรูปภาพ'}
-                            <input type="file" accept="image/*" className="hidden" onChange={handleInsertTrainingDescriptionImage} disabled={isInsertingImage} />
-                        </label>
+            {
+                showTrainingModal && (<div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"><div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-fade-in-up"><div className="bg-blue-600 text-white px-6 py-4 flex justify-between items-center"><h3 className="text-lg font-bold flex items-center gap-2"><Calendar size={20} className="text-blue-200" /> {editingTrainingId ? 'แก้ไขหลักสูตรอบรม' : 'เพิ่มหลักสูตรอบรม'}</h3><button onClick={() => setShowTrainingModal(false)} className="text-blue-200 hover:text-white"><X size={24} /></button></div><form onSubmit={handleAddTraining} className="p-6 space-y-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">ชื่อหลักสูตร</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.title} onChange={(e) => setTrainingForm({ ...trainingForm, title: e.target.value })} /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">วันที่ (MM/DD/YYYY)</label><input type="date" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.rawDate} onChange={(e) => setTrainingForm({ ...trainingForm, rawDate: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">เวลา (เช่น 09:00-16:00)</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.time} onChange={(e) => setTrainingForm({ ...trainingForm, time: e.target.value })} /></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">สถานที่</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.location} onChange={(e) => setTrainingForm({ ...trainingForm, location: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">ประเภท</label><select className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none bg-white" value={trainingForm.type} onChange={(e) => setTrainingForm({ ...trainingForm, type: e.target.value })}><option>Onsite</option><option>Online</option><option>Hybrid</option></select></div></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">จำนวนรับ (ท่าน)</label><input type="number" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.seats} onChange={(e) => setTrainingForm({ ...trainingForm, seats: e.target.value })} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">ราคา</label><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.price} onChange={(e) => setTrainingForm({ ...trainingForm, price: e.target.value })} /></div></div>
+                    <div className="grid grid-cols-2 gap-4 items-end">
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">วิทยากร</label><input type="text" className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={trainingForm.speaker} onChange={(e) => setTrainingForm({ ...trainingForm, speaker: e.target.value })} /></div>
+                        <div className="relative"><input type="file" id="speaker-upload" className="hidden" accept="image/*" onChange={handleSpeakerFileChange} /><label htmlFor="speaker-upload" className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-lg px-4 py-2 cursor-pointer hover:bg-gray-50 text-sm text-gray-600"><UploadCloud size={18} />{trainingForm.speakerImage ? 'เปลี่ยนรูป' : 'รูปวิทยากร'}</label></div>
                     </div>
-                    <textarea className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none h-24 resize-none focus:ring-2 focus:ring-blue-100 transition" placeholder="ใส่รายละเอียดเพิ่มเติม..." value={trainingForm.description} onChange={(e) => setTrainingForm({ ...trainingForm, description: e.target.value })} ></textarea>
-                </div><div className="pt-4 flex justify-end gap-3 border-t"><button type="button" onClick={() => setShowTrainingModal(false)} className="px-5 py-2 rounded-lg text-gray-600 hover:bg-gray-100 font-medium">ยกเลิก</button><button type="submit" className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg">{editingTrainingId ? 'บันทึกการแก้ไข' : 'บันทึกข้อมูล'}</button></div></form></div></div>)}
-
-            {showMediaModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-fade-in-up">
-                        <div className="bg-purple-700 text-white px-6 py-4 flex justify-between items-center">
-                            <h3 className="text-lg font-bold flex items-center gap-2"><Film size={20} /> {editingMediaId ? 'แก้ไขสื่อมัลติมีเดีย' : 'เพิ่มสื่อมัลติมีเดีย'}</h3>
-                            <button onClick={() => setShowMediaModal(false)} className="text-white hover:text-purple-200"><X size={24} /></button>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">รายละเอียดโครงการ</label>
+                        <div className="mb-2 flex gap-2">
+                            <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
+                                <Images size={14} />
+                                {isInsertingImage ? 'กำลังอัปโหลด...' : 'แทรกรูปภาพ'}
+                                <input type="file" accept="image/*" className="hidden" onChange={handleInsertTrainingDescriptionImage} disabled={isInsertingImage} />
+                            </label>
+                            <label className="cursor-pointer bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
+                                <Video size={14} />
+                                {isInsertingVideo ? 'กำลังอัปโหลด...' : 'แทรกวิดีโอ'}
+                                <input type="file" accept="video/*" className="hidden" onChange={(e) => handleInsertVideo(e, 'training')} disabled={isInsertingVideo} />
+                            </label>
                         </div>
-                        <form onSubmit={handleAddMedia} className="p-6 space-y-4">
-                            <div><label className="block text-sm font-medium text-gray-700 mb-1">หัวข้อ / คำอธิบาย</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={mediaForm.title} onChange={(e) => setMediaForm({ ...mediaForm, title: e.target.value })} /></div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">ประเภทสื่อ</label>
-                                <div className="flex gap-4">
-                                    <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={mediaForm.category === 'image'} onChange={() => setMediaForm({ ...mediaForm, category: 'image' })} /> <ImageIcon size={16} /> รูปภาพ</label>
-                                    <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={mediaForm.category === 'video'} onChange={() => setMediaForm({ ...mediaForm, category: 'video' })} /> <Video size={16} /> วิดีโอ</label>
-                                </div>
+                        <textarea className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none h-24 resize-none focus:ring-2 focus:ring-blue-100 transition" placeholder="ใส่รายละเอียดเพิ่มเติม..." value={trainingForm.description} onChange={(e) => setTrainingForm({ ...trainingForm, description: e.target.value })} ></textarea>
+                    </div><div className="pt-4 flex justify-end gap-3 border-t"><button type="button" onClick={() => setShowTrainingModal(false)} className="px-5 py-2 rounded-lg text-gray-600 hover:bg-gray-100 font-medium">ยกเลิก</button><button type="submit" className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg">{editingTrainingId ? 'บันทึกการแก้ไข' : 'บันทึกข้อมูล'}</button></div></form></div></div>)
+            }
+
+            {
+                showMediaModal && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                        <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-fade-in-up">
+                            <div className="bg-purple-700 text-white px-6 py-4 flex justify-between items-center">
+                                <h3 className="text-lg font-bold flex items-center gap-2"><Film size={20} /> {editingMediaId ? 'แก้ไขสื่อมัลติมีเดีย' : 'เพิ่มสื่อมัลติมีเดีย'}</h3>
+                                <button onClick={() => setShowMediaModal(false)} className="text-white hover:text-purple-200"><X size={24} /></button>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">ที่มา (Source)</label>
-                                <div className="flex gap-2 mb-3">
-                                    <button type="button" onClick={() => setMediaForm({ ...mediaForm, sourceType: 'upload' })} className={`px-3 py-1 rounded text-xs border ${mediaForm.sourceType === 'upload' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>อัปโหลดไฟล์</button>
-                                    <button type="button" onClick={() => setMediaForm({ ...mediaForm, sourceType: 'link' })} className={`px-3 py-1 rounded text-xs border ${mediaForm.sourceType === 'link' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>ลิงก์ภายนอก (URL)</button>
-                                    <button type="button" onClick={() => setMediaForm({ ...mediaForm, sourceType: 'embed' })} className={`px-3 py-1 rounded text-xs border ${mediaForm.sourceType === 'embed' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>Embed Code</button>
+                            <form onSubmit={handleAddMedia} className="p-6 space-y-4">
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">หัวข้อ / คำอธิบาย</label><input type="text" required className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none" value={mediaForm.title} onChange={(e) => setMediaForm({ ...mediaForm, title: e.target.value })} /></div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">ประเภทสื่อ</label>
+                                    <div className="flex gap-4">
+                                        <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={mediaForm.category === 'image'} onChange={() => setMediaForm({ ...mediaForm, category: 'image' })} /> <ImageIcon size={16} /> รูปภาพ</label>
+                                        <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={mediaForm.category === 'video'} onChange={() => setMediaForm({ ...mediaForm, category: 'video' })} /> <Video size={16} /> วิดีโอ</label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">ที่มา (Source)</label>
+                                    <div className="flex gap-2 mb-3">
+                                        <button type="button" onClick={() => setMediaForm({ ...mediaForm, sourceType: 'upload' })} className={`px-3 py-1 rounded text-xs border ${mediaForm.sourceType === 'upload' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>อัปโหลดไฟล์</button>
+                                        <button type="button" onClick={() => setMediaForm({ ...mediaForm, sourceType: 'link' })} className={`px-3 py-1 rounded text-xs border ${mediaForm.sourceType === 'link' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>ลิงก์ภายนอก (URL)</button>
+                                        <button type="button" onClick={() => setMediaForm({ ...mediaForm, sourceType: 'embed' })} className={`px-3 py-1 rounded text-xs border ${mediaForm.sourceType === 'embed' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>Embed Code</button>
+                                    </div>
+
+                                    {mediaForm.sourceType === 'upload' && (
+                                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 transition cursor-pointer relative">
+                                            {uploadPreview ? (
+                                                mediaForm.category === 'image' ? <img src={uploadPreview || undefined} className="h-32 object-contain" /> : <div className="flex items-center gap-2 text-green-600"><CheckCircle /> พร้อมอัปโหลดวิดีโอ</div>
+                                            ) : (
+                                                <><UploadCloud size={32} className="text-gray-400" /><span className="text-sm text-gray-500">คลิกเพื่อเลือกไฟล์</span></>
+                                            )}
+                                            <input type="file" accept={mediaForm.category === 'image' ? "image/*" : "video/*"} onChange={handleMediaFileChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                        </div>
+                                    )}
+
+                                    {mediaForm.sourceType === 'link' && (
+                                        <div className="relative"><LinkIcon className="absolute left-3 top-2.5 text-gray-400" size={16} /><input type="url" className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg outline-none" placeholder="https://example.com/file.mp4" value={mediaForm.url} onChange={(e) => setMediaForm({ ...mediaForm, url: e.target.value })} /></div>
+                                    )}
+
+                                    {mediaForm.sourceType === 'embed' && (
+                                        <div className="relative"><Code className="absolute left-3 top-2.5 text-gray-400" size={16} /><textarea className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg outline-none h-24 resize-none font-mono text-xs" placeholder='<iframe src="..." ...></iframe>' value={mediaForm.embedCode} onChange={(e) => setMediaForm({ ...mediaForm, embedCode: e.target.value })}></textarea></div>
+                                    )}
                                 </div>
 
-                                {mediaForm.sourceType === 'upload' && (
-                                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 transition cursor-pointer relative">
-                                        {uploadPreview ? (
-                                            mediaForm.category === 'image' ? <img src={uploadPreview} className="h-32 object-contain" /> : <div className="flex items-center gap-2 text-green-600"><CheckCircle /> พร้อมอัปโหลดวิดีโอ</div>
-                                        ) : (
-                                            <><UploadCloud size={32} className="text-gray-400" /><span className="text-sm text-gray-500">คลิกเพื่อเลือกไฟล์</span></>
-                                        )}
-                                        <input type="file" accept={mediaForm.category === 'image' ? "image/*" : "video/*"} onChange={handleMediaFileChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                {/* Cover Image for Video */}
+                                {mediaForm.category === 'video' && (
+                                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                        <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                            <ImageIcon size={16} className="text-purple-600" /> รูปปกวิดีโอ (Cover Image)
+                                        </label>
+                                        <div className="flex gap-4 items-start">
+                                            <div className="flex-1">
+                                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-3 flex flex-col items-center justify-center gap-1 bg-white hover:bg-gray-50 transition cursor-pointer relative h-32">
+                                                    {(mediaForm.coverImage || selectedMediaCoverFile) ? (
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            {mediaForm.coverImage && !selectedMediaCoverFile && <img src={mediaForm.coverImage} className="h-20 object-cover rounded" />}
+                                                            {selectedMediaCoverFile && <div className="text-green-600 font-medium text-xs text-center"><CheckCircle size={16} className="mx-auto mb-1" /> {selectedMediaCoverFile.name}</div>}
+                                                            {!selectedMediaCoverFile && <button type="button" onClick={() => setMediaForm({ ...mediaForm, coverImage: '' })} className="text-xs text-red-500 underline">ลบรูปปก</button>}
+                                                        </div>
+                                                    ) : (
+                                                        <><UploadCloud size={24} className="text-gray-400" /><span className="text-xs text-gray-500 text-center">เลือกรูปปก<br />(Optional)</span></>
+                                                    )}
+                                                    <input type="file" accept="image/*" onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) setSelectedMediaCoverFile(file);
+                                                    }} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                                </div>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="text-xs text-gray-500 mb-1">หรือใส่ URL รูปภาพ</div>
+                                                <input type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none text-xs" placeholder="https://example.com/image.jpg" value={mediaForm.coverImage} onChange={(e) => setMediaForm({ ...mediaForm, coverImage: e.target.value })} />
+                                                <p className="text-[10px] text-gray-400 mt-1">* รูปปกจะแสดงในหน้า Gallery แทนที่วิดีโอเพลเยอร์</p>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 
-                                {mediaForm.sourceType === 'link' && (
-                                    <div className="relative"><LinkIcon className="absolute left-3 top-2.5 text-gray-400" size={16} /><input type="url" className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg outline-none" placeholder="https://example.com/file.mp4" value={mediaForm.url} onChange={(e) => setMediaForm({ ...mediaForm, url: e.target.value })} /></div>
-                                )}
 
-                                {mediaForm.sourceType === 'embed' && (
-                                    <div className="relative"><Code className="absolute left-3 top-2.5 text-gray-400" size={16} /><textarea className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg outline-none h-24 resize-none font-mono text-xs" placeholder='<iframe src="..." ...></iframe>' value={mediaForm.embedCode} onChange={(e) => setMediaForm({ ...mediaForm, embedCode: e.target.value })}></textarea></div>
-                                )}
-                            </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">รายละเอียดเพิ่มเติม</label>
-                                <div className="mb-2">
-                                    <label className="cursor-pointer bg-purple-50 hover:bg-purple-100 text-purple-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
-                                        <Images size={14} />
-                                        {isInsertingImage ? 'กำลังอัปโหลด...' : 'แทรกรูปภาพ'}
-                                        <input type="file" accept="image/*" className="hidden" onChange={handleInsertMediaDescriptionImage} disabled={isInsertingImage} />
-                                    </label>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">รายละเอียดเพิ่มเติม</label>
+                                    <div className="mb-2 flex gap-2">
+                                        <label className="cursor-pointer bg-purple-50 hover:bg-purple-100 text-purple-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
+                                            <Images size={14} />
+                                            {isInsertingImage ? 'กำลังอัปโหลด...' : 'แทรกรูปภาพ'}
+                                            <input type="file" accept="image/*" className="hidden" onChange={handleInsertMediaDescriptionImage} disabled={isInsertingImage} />
+                                        </label>
+                                        <label className="cursor-pointer bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition">
+                                            <Video size={14} />
+                                            {isInsertingVideo ? 'กำลังอัปโหลด...' : 'แทรกวิดีโอ'}
+                                            <input type="file" accept="video/*" className="hidden" onChange={(e) => handleInsertVideo(e, 'media')} disabled={isInsertingVideo} />
+                                        </label>
+                                    </div>
+                                    <textarea className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none h-32 resize-none focus:ring-2 focus:ring-purple-100 transition" placeholder="ใส่รายละเอียด..." value={mediaForm.description} onChange={(e) => setMediaForm({ ...mediaForm, description: e.target.value })} ></textarea>
                                 </div>
-                                <textarea className="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none h-32 resize-none focus:ring-2 focus:ring-purple-100 transition" placeholder="ใส่รายละเอียด..." value={mediaForm.description} onChange={(e) => setMediaForm({ ...mediaForm, description: e.target.value })} ></textarea>
-                            </div>
 
-                            <div className="pt-4 flex justify-end gap-3 border-t"><button type="button" onClick={() => setShowMediaModal(false)} className="px-5 py-2 rounded-lg text-gray-600 hover:bg-gray-100 font-medium">ยกเลิก</button><button type="submit" disabled={isUploading} className="px-6 py-2 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-700 shadow-lg flex items-center gap-2">{isUploading ? <><Loader2 size={18} className="animate-spin" /> กำลังบันทึก...</> : (editingMediaId ? 'บันทึกการแก้ไข' : 'บันทึกสื่อ')}</button></div>
-                        </form>
+                                <div className="pt-4 flex justify-end gap-3 border-t"><button type="button" onClick={() => setShowMediaModal(false)} className="px-5 py-2 rounded-lg text-gray-600 hover:bg-gray-100 font-medium">ยกเลิก</button><button type="submit" disabled={isUploading} className="px-6 py-2 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-700 shadow-lg flex items-center gap-2">{isUploading ? <><Loader2 size={18} className="animate-spin" /> กำลังบันทึก...</> : (editingMediaId ? 'บันทึกการแก้ไข' : 'บันทึกสื่อ')}</button></div>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }

@@ -31,6 +31,9 @@ export async function PUT(
                 album: body.album,
                 time: body.time,
                 content: body.content,
+                video: body.video,
+                videoType: body.videoType,
+                videoEmbed: body.videoEmbed,
             },
         });
         return NextResponse.json(news);

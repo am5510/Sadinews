@@ -36,6 +36,7 @@ export async function POST(request: Request) {
         return NextResponse.json(training, { status: 201 });
     } catch (error) {
         console.error('Error creating training:', error);
-        return NextResponse.json({ error: 'Failed to create training' }, { status: 500 });
+        const errorMessage = (error as any)?.message || String(error) || 'Failed to create training';
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }

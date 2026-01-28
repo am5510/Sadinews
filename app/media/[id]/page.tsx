@@ -136,19 +136,55 @@ export default function MediaDetailPage() {
                     </div>
 
                     <div className="rounded-xl overflow-hidden mb-8 aspect-video shadow-md bg-black flex items-center justify-center">
-                        {item.sourceType === 'embed' ? (
-                            <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: item.embedCode || '' }} />
-                        ) : (item.category === 'video' || item.type === 'video') ? (
-                            <video src={item.url} className="w-full h-full" controls autoPlay />
-                        ) : (
-                            <img src={item.url} alt={item.title} className="w-full h-full object-contain" />
-                        )}
+                        {(() => {
+                            if (item.sourceType === 'embed') {
+                                return <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: item.embedCode || '' }} />;
+                            }
+
+                            if (item.category === 'video' || item.type === 'video') {
+                                // Helper to check for YouTube/Vimeo
+                                const getEmbedUrl = (url: string) => {
+                                    if (!url) return null;
+
+                                    // YouTube
+                                    const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/watch\?v=)([^&]+)/);
+                                    if (ytMatch && ytMatch[1]) {
+                                        return `https://www.youtube.com/embed/${ytMatch[1]}`;
+                                    }
+
+                                    // Vimeo
+                                    const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+                                    if (vimeoMatch && vimeoMatch[1]) {
+                                        return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+                                    }
+
+                                    return null;
+                                };
+
+                                const embedUrl = item.url ? getEmbedUrl(item.url) : null;
+
+                                if (embedUrl) {
+                                    return (
+                                        <iframe
+                                            src={embedUrl}
+                                            className="w-full h-full"
+                                            frameBorder="0"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                        />
+                                    );
+                                }
+
+                                return <video src={item.url || ''} className="w-full h-full" controls autoPlay />;
+                            }
+
+                            return <img src={item.url || ''} alt={item.title} className="w-full h-full object-contain" />;
+                        })()}
                     </div>
 
                     {/* Description */}
                     {item.description && (
                         <div className="mb-12">
-                            <h3 className="text-xl font-bold text-gray-900 mb-4">รายละเอียด</h3>
                             <div
                                 className="news-content text-gray-700 leading-relaxed space-y-4"
                                 dangerouslySetInnerHTML={{ __html: item.description }}

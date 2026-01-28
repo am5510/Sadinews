@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ChevronRight, Clock, Activity, Copy, Facebook, Images, Loader2 } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Clock, Activity, Copy, Facebook, Images, Loader2, Film } from 'lucide-react';
 import { NewsItem } from '@/types';
 import { useRouter } from 'next/navigation';
 
@@ -107,6 +107,53 @@ export default function NewsDetailClient({ news, relatedNews }: { news: NewsItem
                         style={{ fontSize: `${fontSize}px`, fontFamily: 'var(--font-noto-sans-thai)' }}
                         dangerouslySetInnerHTML={{ __html: contentToRender }}
                     ></div>
+
+                    {(news.video || news.videoEmbed) && (
+                        <div className="mt-8 mb-8">
+                            <div className="rounded-xl overflow-hidden shadow-sm bg-black aspect-video relative z-0">
+                                {(() => {
+                                    if (news.videoType === 'embed') {
+                                        return <div className="w-full h-full [&_iframe]:w-full [&_iframe]:h-full" dangerouslySetInnerHTML={{ __html: news.videoEmbed || '' }} />;
+                                    }
+
+                                    // Helper to check for YouTube/Vimeo
+                                    const getEmbedUrl = (url: string | null | undefined) => {
+                                        if (!url) return null;
+
+                                        // YouTube
+                                        const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/))([^&?]+)/);
+                                        if (ytMatch && ytMatch[1]) {
+                                            return `https://www.youtube.com/embed/${ytMatch[1]}`;
+                                        }
+
+                                        // Vimeo
+                                        const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+                                        if (vimeoMatch && vimeoMatch[1]) {
+                                            return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+                                        }
+
+                                        return null;
+                                    };
+
+                                    const embedUrl = getEmbedUrl(news.video);
+
+                                    if (embedUrl) {
+                                        return (
+                                            <iframe
+                                                src={embedUrl}
+                                                className="w-full h-full"
+                                                frameBorder="0"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                allowFullScreen
+                                            />
+                                        );
+                                    }
+
+                                    return <video src={news.video || ''} controls className="w-full h-full" />;
+                                })()}
+                            </div>
+                        </div>
+                    )}
 
                     {news.album && news.album.length > 0 && (
                         <div className="mt-12 pt-8 border-t border-gray-100">
