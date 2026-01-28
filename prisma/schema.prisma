@@ -40,13 +40,13 @@ model Training {
 }
 
 model Media {
-  id         String   @id @default(cuid())
-  title      String
-  category   String   @default("image")
-  sourceType String   @default("upload")
-  url        String?
-  embedCode  String?
+  id          String   @id @default(cuid())
+  title       String
+  category    String   @default("image")
+  sourceType  String   @default("upload")
+  url         String?
+  embedCode   String?
+  createdAt   DateTime @default(now())
+  views       Int      @default(0)
   description String?
-  views      Int      @default(0)
-  createdAt  DateTime @default(now())
 }
