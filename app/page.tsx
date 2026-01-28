@@ -5,7 +5,7 @@ import { ArrowRight, Clock, MapPin, Play } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import HomeCarousel from '@/components/HomeCarousel';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 // Helper to format dates or ensure serializable data if needed
 const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
