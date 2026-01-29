@@ -9,6 +9,14 @@ import { NewsItem, TrainingItem, MediaItem } from '@/types';
 export default function DashboardPage() {
     const router = useRouter();
 
+    const getThaiDate = () => {
+        return new Date().toLocaleDateString('th-TH', {
+            year: '2-digit',
+            month: 'short',
+            day: 'numeric',
+        });
+    };
+
     // Data State
     const [newsList, setNewsList] = useState<NewsItem[]>([]);
     const [trainingList, setTrainingList] = useState<TrainingItem[]>([]);
@@ -42,7 +50,7 @@ export default function DashboardPage() {
         category: 'ทั่วไป',
         image: '',
         album: [] as string[],
-        time: 'เมื่อสักครู่',
+        time: getThaiDate(),
         content: '',
         video: '',
         videoType: 'upload', // upload, link, embed
@@ -277,7 +285,7 @@ export default function DashboardPage() {
                 category: 'ทั่วไป',
                 image: '',
                 album: [],
-                time: 'เมื่อสักครู่',
+                time: getThaiDate(),
                 content: '',
                 video: '',
                 videoType: 'upload',
@@ -605,7 +613,7 @@ export default function DashboardPage() {
                         <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                             <h3 className="font-bold text-gray-800 flex items-center gap-2"><ListFilter size={18} /> จัดการข่าว</h3>
                             <button
-                                onClick={() => { setEditingNewsId(null); setNewsForm({ title: '', category: 'ทั่วไป', image: '', album: [], time: 'เมื่อสักครู่', content: '', video: '', videoType: 'upload', videoEmbed: '' }); setUploadPreview(null); setSelectedVideoFile(null); setAlbumPreviews([]); setShowNewsModal(true); }}
+                                onClick={() => { setEditingNewsId(null); setNewsForm({ title: '', category: 'ทั่วไป', image: '', album: [], time: getThaiDate(), content: '', video: '', videoType: 'upload', videoEmbed: '' }); setUploadPreview(null); setSelectedVideoFile(null); setAlbumPreviews([]); setShowNewsModal(true); }}
                                 className="text-xs bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 flex items-center gap-1">
                                 <Plus size={12} /> เพิ่มข่าว
                             </button>
