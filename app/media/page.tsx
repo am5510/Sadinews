@@ -24,6 +24,7 @@ export default async function MediaPage() {
         url: item.url || '', // Ensure url is not null if definition says string
         embedCode: item.embedCode || undefined,
         description: item.description || undefined,
+        coverImage: item.coverImage || undefined,
     }));
 
     return (
