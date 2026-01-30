@@ -675,7 +675,7 @@ export default function DashboardPage() {
                         <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                             <h3 className="font-bold text-gray-800 flex items-center gap-2"><Calendar size={18} /> จัดการตารางอบรม</h3>
                             <button
-                                onClick={() => { setEditingTrainingId(null); setTrainingForm({ title: '', rawDate: '', time: '', location: '', seats: '', price: '', speaker: '', speakerImage: '', type: 'Onsite', description: '' }); setShowTrainingModal(true); }}
+                                onClick={() => { setEditingTrainingId(null); setTrainingForm({ title: '', rawDate: '', time: '', location: '', seats: '', price: '', speaker: '', speakerImage: '', speakerPosition: '', type: 'Onsite', description: '' }); setShowTrainingModal(true); }}
                                 className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 flex items-center gap-1">
                                 <Plus size={12} /> เพิ่มอบรม
                             </button>
